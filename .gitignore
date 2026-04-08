@@ -1,0 +1,52 @@
+# Python
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+*.so
+
+# Credentials and secrets
+.env.local
+.env.*.local
+.env.production
+*.key
+*.pem
+*.p12
+*.crt
+credentials.json
+service-account*.json
+.secrets/
+
+# Data files (prevent accidental PHI commits)
+*.csv
+*.tsv
+*.jsonl
+*.parquet
+*.arrow
+*.npy
+*.npz
+
+# Logs
+*.log
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Model files
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Notebook checkpoints
+.ipynb_checkpoints/

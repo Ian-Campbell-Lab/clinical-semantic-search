@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clinical-semantic-search"
+version = "0.1.0"
+description = "Health-system-scale semantic search over clinical notes"
+readme = "README.md"
+license = {text = "CC-BY-NC-4.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Ian M. Campbell"},
+]
+
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pydantic-settings>=2.0",
+    "langchain-text-splitters>=0.2",
+    "langchain-core>=0.2",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+gcp = [
+    "google-cloud-aiplatform>=1.50",
+    "google-cloud-bigtable>=2.23",
+    "google-cloud-bigquery>=3.20",
+    "google-cloud-bigquery-storage>=2.25",
+    "google-auth>=2.28",
+    "pyarrow>=15.0",
+]
+webapp = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "jinja2>=3.1",
+    "markupsafe>=2.1",
+    "python-multipart>=0.0.9",
+]
+tpu = [
+    "torch-xla>=2.3",
+    "tqdm>=4.66",
+]
+dev = [
+    "pytest>=8.0",
+    "matplotlib>=3.8",
+]
+all = [
+    "clinical-semantic-search[gcp,webapp,tpu,dev]",
+]
+
+[project.scripts]
+clinical-search = "webapp.app:configure_and_run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clinical Semantic Search</title>
+  <link rel="stylesheet" href="{{ style_data }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>Clinical Semantic Search</h1></div>
+
+        <form method="get" class="layout" id="search-form">
+            <div class="left-col">
+                <div class="card question-card">
+                    <div class="question-label-row">
+                        <label style="margin: 0;">Question:</label>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="query-prefix-wrapper">
+                                <label style="display: inline-flex; align-items: center; cursor: pointer; font-size: 12px; margin: 0; font-weight: 400;">
+                                    <input type="checkbox" name="query_prefix" value="yes" id="query-prefix-checkbox" {{ 'checked' if (request.query_params.get('query_prefix') == 'yes') or (not request.query_params.get('question')) else '' }} style="width: auto; margin: 0 4px 0 0; cursor: pointer;">
+                                    Query Prefix
+                                </label>
+                                <span class="query-prefix-help">
+                                    ?
+                                    <div class="query-prefix-tooltip">
+                                        Improves search results by adding instructions to your question (recommended). Disabling uses keyword matching instead.
+                                    </div>
+                                </span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <label style="display: inline-flex; align-items: center; cursor: pointer; font-size: 12px; margin: 0; font-weight: 400;">
+                                    <input type="checkbox" name="save_results" value="yes" id="save-results-checkbox" {{ 'checked' if request.query_params.get('save_results') == 'yes' else '' }} style="width: auto; margin: 0 4px 0 0; cursor: pointer;">
+                                    Save Results
+                                </label>
+                                <span class="query-prefix-help">
+                                    ?
+                                    <div class="query-prefix-tooltip">
+                                        Results will be saved to csv folder in /home/<user_name>/vector_search_results. Recommended if retrieving a lot of notes.
+                                    </div>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <textarea name="question" rows="1" required autocomplete="off" placeholder="Type question here" id="question-textarea">{{ question|default("Does the patient have kawasaki disease?", true) }}</textarea>
+                    <div class="button-group">
+                        <button type="submit" id="ask-btn">Search</button>
+                        <button type="button" id="search-more-btn" title="Search for more patients, excluding returned MRNs and all workspace MRNs">Search More</button>
+                        <button type="button" id="refresh-btn">🔄 Reset</button>
+                    </div>
+                </div>
+
+                <div class="horizontal-resizer" id="left-col-resizer"></div>
+
+                <div class="card" id="filters-card">
+                    <div class="filter-header">
+                        <div style="display: flex; align-items: center;">
+                            <h3 style="margin: 0;">Filters</h3>
+                            <span class="filter-help-icon">
+                                ?
+                                <div class="filter-help-tooltip">
+                                    <strong>Include MRN(s):</strong> Search only these specific MRNs (leave empty for all)
+                                    <strong>Exclude MRN(s):</strong> Exclude these MRNs from search results
+                                    <strong># Notes to Retrieve:</strong> Maximum number of notes to retrieve from the search
+                                    <strong>Notes Per Patient:</strong> Limit the number of notes retrieved per patient
+                                    <strong>Note Category:</strong> Filter by note type, e.g., Progress Notes, Discharge Summary, etc.
+                                    <strong>Encounter Type:</strong> Filter by encounter type, e.g., Inpatient, Office Visit, etc.
+                                    <strong>Department:</strong> Filter by hospital department
+                                    <strong>Specialty:</strong> Filter by medical specialty, e.g., Genetics, Cardiology, etc.
+                                    <strong>Author Type:</strong> Filter by author type, e.g., Physician, Nurse Practitioner, etc.
+                                    <strong>Author Name:</strong> Filter by specific note author name
+                                    <strong>Date Range:</strong> Filter notes by date range
+                                    <em>For filters with +Inc/-Exc buttons, you can include or exclude specific values.</em>
+                                </div>
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- Always visible filters -->
+                    <div class="filter-group">
+                        <label>Include MRN(s):</label>
+                        <textarea name="mrns_user" id="mrns-textarea" rows="1" autocomplete="off" placeholder="MRNs to search/include">{{ request.query_params.get('mrns_user', '') }}</textarea>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Exclude MRN(s):</label>
+                        <textarea name="mrns_exclude_user" id="mrns-exclude-textarea" rows="1" autocomplete="off" placeholder="MRNs to exclude from search">{{ request.query_params.get('mrns_exclude_user', '') }}</textarea>
+                    </div>
+
+                    <div class="filter-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1;">
+                            <label># Notes to Retrieve:</label>
+                            <input type="number" name="n_notes" min="1" step="1" value="{{ request.query_params.get('n_notes', '3') }}">
+                        </div>
+                        <div style="flex: 1;">
+                            <label>Notes Per Patient:</label>
+                            <input type="number" name="crowding_neighbor_count" min="0" step="1" value="{{ request.query_params.get('crowding_neighbor_count', '') }}">
+                        </div>
+                    </div>
+
+                    <!-- Add Filter Button -->
+                    <div class="add-filter-container">
+                        <button type="button" class="add-filter-btn-main" id="add-filter-btn">
+                            <span>+ Add Filter</span>
+                        </button>
+                        <div class="filter-dropdown" id="filter-dropdown">
+                            <div class="filter-dropdown-item" data-filter="note_category">Note Category</div>
+                            <div class="filter-dropdown-item" data-filter="encounter_type">Encounter Type</div>
+                            <div class="filter-dropdown-item" data-filter="department">Department</div>
+                            <div class="filter-dropdown-item" data-filter="specialty">Specialty</div>
+                            <div class="filter-dropdown-item" data-filter="author_type">Author Type</div>
+                            <div class="filter-dropdown-item" data-filter="author_name">Author Name</div>
+                            <div class="filter-dropdown-item" data-filter="date_range">Date Range</div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden filters that can be added -->
+                    <div class="filter-group hidden" id="filter-note_category">
+                        <div class="filter-group-header">
+                            <label>Note Category:</label>
+                            <div>
+                                <button type="button" class="suggested-filters-btn" onclick="applySuggestedFilters('note_category')">+ Suggested Filters</button>
+                                <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('note_category')">✕ Remove Filter</button>
+                            </div>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="note_category-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="note_category-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('note_category', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('note_category', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="note_category-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-encounter_type">
+                        <div class="filter-group-header">
+                            <label>Encounter Type:</label>
+                            <div>
+                                <button type="button" class="suggested-filters-btn" onclick="applySuggestedFilters('encounter_type')">+ Suggested Filters</button>
+                                <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('encounter_type')">✕ Remove Filter</button>
+                            </div>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="encounter_type-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="encounter_type-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('encounter_type', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('encounter_type', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="encounter_type-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-department">
+                        <div class="filter-group-header">
+                            <label>Department:</label>
+                            <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('department')">✕ Remove Filter</button>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="department-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="department-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('department', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('department', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="department-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-specialty">
+                        <div class="filter-group-header">
+                            <label>Specialty:</label>
+                            <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('specialty')">✕ Remove Filter</button>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="specialty-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="specialty-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('specialty', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('specialty', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="specialty-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-author_type">
+                        <div class="filter-group-header">
+                            <label>Author Type:</label>
+                            <div>
+                                <button type="button" class="suggested-filters-btn" onclick="applySuggestedFilters('author_type')">+ Suggested Filters</button>
+                                <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('author_type')">✕ Remove Filter</button>
+                            </div>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="author_type-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="author_type-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('author_type', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('author_type', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="author_type-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-author_name">
+                        <div class="filter-group-header">
+                            <label>Author Name:</label>
+                            <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('author_name')">✕ Remove Filter</button>
+                        </div>
+                        <div class="filter-control-wrapper">
+                            <div class="autocomplete-wrapper">
+                                <input type="text" class="filter-input" id="author_name-input" placeholder="Type to search..." autocomplete="off">
+                                <div class="autocomplete-dropdown" id="author_name-dropdown"></div>
+                            </div>
+                            <div class="include-exclude-buttons">
+                                <button type="button" class="add-filter-btn include-btn" onclick="addFilter('author_name', 'include')">+ Inc</button>
+                                <button type="button" class="add-filter-btn exclude-btn" onclick="addFilter('author_name', 'exclude')">- Exc</button>
+                            </div>
+                        </div>
+                        <div class="tags-container" id="author_name-tags"></div>
+                    </div>
+
+                    <div class="filter-group hidden" id="filter-date_range">
+                        <div class="filter-group-header">
+                            <label>Date Range:</label>
+                            <button type="button" class="remove-filter-btn" onclick="removeFilterGroup('date_range')">✕ Remove Filter</button>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <div style="flex: 1;">
+                                <label style="font-size: 11px; margin: 0 0 2px 0;">Start Date</label>
+                                <input type="date" id="start_date" name="start_date" value="{{ request.query_params.get('start_date', '') }}" style="margin-top: 0;">
+                            </div>
+                            <div style="flex: 1;">
+                                <label style="font-size: 11px; margin: 0 0 2px 0;">End Date</label>
+                                <input type="date" id="end_date" name="end_date" value="{{ request.query_params.get('end_date', '') }}" style="margin-top: 0;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cohort Workspace -->
+                <div class="card workspace-card" id="workspace-card">
+                    <div class="workspace-header">
+                        <div class="workspace-title-row" onclick="toggleWorkspace()">
+                            <h3>Cohort Workspace</h3>
+                            <span class="workspace-toggle collapsed" id="workspace-toggle">▼</span>
+                            <span class="workspace-count" id="workspace-count">0 total</span>
+                        </div>
+                        
+                        <div class="workspace-actions" id="workspace-actions">
+                            <button type="button" onclick="searchFurther()" class="workspace-btn" title="Search using only MRNs in the Include list">
+                                🔍 Search Further
+                            </button>
+                            <button type="button" onclick="searchMoreExcludeAll()" class="workspace-btn" title="Find new patients, excluding all workspace MRNs (both Include and Exclude lists)">
+                                ➕ Search More
+                            </button>
+                            <button id="save-cohort-btn" onclick="saveCohortToBackend()" title="Save cohort to CSV files in /home/user/search_results/">
+                                💾 Save Cohort
+                            </button>
+                            <button type="button" onclick="clearWorkspace()" class="workspace-btn clear-btn" title="Clear all MRNs from workspace">
+                                🗑️ Clear All
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="workspace-content collapsed" id="workspace-content">
+                        <!-- Include List -->
+                        <div class="workspace-section">
+                            <div class="workspace-section-header">
+                                <span class="workspace-section-title">✓ Included MRNs</span>
+                                <span class="workspace-section-count" id="include-count">0</span>
+                            </div>
+                            <div class="workspace-mrns" id="workspace-include-mrns" data-list-type="include">
+                                <em style="color: #999; font-size: 11px;">No MRNs included yet.</em>
+                            </div>
+                        </div>
+                        
+                        <!-- Exclude List -->
+                        <div class="workspace-section">
+                            <div class="workspace-section-header">
+                                <span class="workspace-section-title">✗ Excluded MRNs</span>
+                                <span class="workspace-section-count" id="exclude-count">0</span>
+                            </div>
+                            <div class="workspace-mrns" id="workspace-exclude-mrns" data-list-type="exclude">
+                                <em style="color: #999; font-size: 11px;">No MRNs excluded yet.</em>
+                            </div>
+                        </div>
+                        
+                        <!-- Help text for drag and drop -->
+                        <div style="margin-top: 8px; padding: 6px; background: #f5f7fa; border-radius: 4px; font-size: 11px; color: #666;">
+                            💡 <strong>Tip:</strong> Drag MRNs between Include and Exclude lists.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="resizer"></div>
+
+            <div class="right-col">
+                <div id="loading-message" class="card" style="display:none; text-align: center; padding: 40px; color: #666;">
+                    <h3 style="color: #999;">Retrieving notes...</h3>
+                    <p>Please wait while we fetch the relevant notes.</p>
+                </div>
+                
+                {% if has_results %}
+                    {% if grouped_chunks and grouped_chunks|length > 0 %}
+                        <div id="retrieved-notes" class="card">
+                            <!-- Action buttons area above MRN buttons -->
+                            <div class="mrn-actions-bar">
+                                <button type="button" id="include-all-btn" onclick="addAllToWorkspace()" title="Add all returned MRNs to the workspace Include list">
+                                    ➕ Add All to Workspace
+                                </button>
+                                <button type="button" id="copy-mrns-btn" onclick="copyAllMRNs()" title="Copy all returned MRNs to clipboard">
+                                    📋 Copy All MRNs
+                                </button>
+                                <button type="button" id="manage-hint-btn" title="Press A to add current MRN to Include list, D to add to Exclude list in the Cohort Workspace.">
+                                    ⚙️ Manage
+                                </button>
+                            </div>
+                            <!-- index and note status -->
+                            <div class="results-status">
+                                Index last updated on {{ index_last_update }}
+                                <span class="index-status"></span>
+                                {% if count_filtered_notes != count_retrieved_notes %}
+                                    | Showing {{ count_filtered_notes }} of {{ count_retrieved_notes }} retrieved notes. Notes not in your project's allowlist have been excluded.
+                                {% endif %}
+                            </div>
+
+                            <div id="MRN-buttons-container">
+                                <div class="nav-buttons" id="MRN-buttons">
+                                    {% for MRN, notes in grouped_chunks.items() %}
+                                        <button type="button" onclick="showMRN('{{ MRN }}', this)">MRN {{ MRN }}</button>
+                                    {% endfor %}
+                                </div>
+                                <div class="horizontal-resizer" id="mrn-resizer"></div>
+                            </div>
+                            
+                            <div class="scrollable-content">
+                                {% for MRN, notes in grouped_chunks.items() %}
+                                    <div id="MRN-{{ MRN }}" class="MRN-block" style="display:none;">
+                                        <div class="nav-buttons note-buttons" id="note-buttons-{{ MRN }}">
+                                            {% for note in notes %}
+                                                <button type="button" onclick="showNote('{{ MRN }}', {{ loop.index0 }}, this)">Note {{ loop.index }}</button>
+                                            {% endfor %}
+                                        </div>
+                                        <div class="horizontal-resizer note-resizer" data-mrn="{{ MRN }}"></div>
+                                        {% for note in notes %}
+                                            <div id="note-{{ MRN }}-{{ loop.index0 }}" class="note" style="display:none;">
+                                                <div class="note-meta">
+                                                    <b>Patient Name:</b> {{ note.first_name or '' }} {{ note.middle_name or '' }} {{ note.last_name or '' }} | 
+                                                    <b>MRN:</b> {{ note.mrn or '' }} | 
+                                                    <b>DOB:</b> {{ note.birth_date or '' }} | 
+                                                    <b>Age:</b> {{ note.age or '' }} | 
+                                                    <b>Sex:</b> {{ note.sex or '' }} | 
+                                                    <b>Note ID:</b> {{ note.note_id or '' }} | 
+                                                    <b>Note Category:</b> {{ note.note_category or '' }} | 
+                                                    <b>Encounter Type:</b> {{ note.encounter_type or '' }} | 
+                                                    <b>Department:</b> {{ note.department or '' }} | 
+                                                    <b>Specialty:</b> {{ note.specialty or '' }} |
+                                                    <b>Author:</b> {{ note.author_name or '' }} ({{ note.author_type or '' }}) | 
+                                                    <b>Filed Time:</b> {{ note.filed_time or '' }} | 
+                                                    <b>Creation Time:</b> {{ note.creation_time or '' }}
+                                                </div>
+                                                <div class="note-text">{{ note.note_text | highlight_by_indices(note.selected_indices) }}</div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div id="retrieved-notes" class="card">
+                            <div class="note-text"><em>No notes were retrieved.</em></div>
+                        </div>
+                    {% endif %}
+                {% elif question %}
+                    <div id="retrieved-notes" class="card">
+                        <div class="note-text"><em>No notes were retrieved.</em></div>
+                    </div>
+                {% else %}
+                    <div class="card" style="text-align: center; padding: 40px; color: #666;">
+                        <h3 style="color: #999;">Notes will appear here</h3>
+                        <p>Enter a question and click "Search" to retrieve relevant notes.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div id="hidden-filters"></div>
+        </form>
+    </div>
+    <!-- Compliance / Confidentiality Modal -->
+    <div id="compliance-overlay" class="compliance-overlay" aria-hidden="true">
+    <div class="compliance-dialog" role="dialog" aria-modal="true" aria-labelledby="compliance-title">
+        <div class="compliance-header">
+        <h2 id="compliance-title">Confidentiality & Compliance Reminder</h2>
+        </div>
+
+        <div class="compliance-body">
+        <p><strong>Clinical Semantic Search</strong> is designated for <b>research use only.</b></p>
+        <ul>
+            <li>Only perform searchs that are in alignment with your approved IRB protocol.</li>
+            <li>Access only the minimum amount of information necessary to achieve research objectives.</li>
+            <li>Protect PHI at all times; do not copy, download, or redistribute PHI except as permitted.</li>
+            <li>Use of this system is logged and may be audited.</li>
+        </ul>
+        <p class="compliance-small">
+            By continuing, you acknowledge your responsibility to safeguard PHI and comply with institutional policies.
+        </p>
+        </div>
+
+        <div class="compliance-footer">
+        <button type="button" id="compliance-accept-btn" class="compliance-accept-btn">I Understand</button>
+        </div>
+    </div>
+    </div>
+    <script>
+  window.filterOptions = {
+    note_category: {{ options.note_category | tojson | safe }},
+    encounter_type: {{ options.encounter_type | tojson | safe }},
+    department: {{ options.department | tojson | safe }},
+    specialty: {{ options.specialty | tojson | safe }},
+    author_type: {{ options.author_type | tojson | safe }},
+    author_name: {{ options.author_name | tojson | safe }}
+  };
+   window.saveMessage = "{{ save_message }}";
+</script>
+    <script src="{{ script_data }}"></script>
+
+</body>
+</html>
